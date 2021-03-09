@@ -17,10 +17,10 @@ edusrc.dumpsUserInfo()			    // 重新爬去所有用户信息（大概5s）
 edusrc.loadUserInfo()			    // 载入已有用户信息
 edusrc.loadSchoolInfo()			    // 载入已有学校信息
 user = User("杨众山")		  	    // 查询的用户
-school = School("江西师范大学")	         // 查询的学校
-charts.bar()				     // 漏洞柱形图
-charts.pie1()                            // 漏洞种类饼图（显示的不好，待优化）
-charts.pie2()                            // 漏洞类型饼图
+school = School("江西师范大学")	            // 查询的学校
+charts.bar()				    // 漏洞柱形图
+charts.pie1()                               // 漏洞种类饼图（显示的不好，待优化）
+charts.pie2()                               // 漏洞类型饼图
 ```
 
 ## 三、备注
