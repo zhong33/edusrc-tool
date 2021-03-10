@@ -253,8 +253,8 @@ def main():
             show.show()
             charts = Charts(obj)
             charts.bar()
-            charts.pie1()
-            # charts.pie2()
+            # charts.pie1()
+            charts.pie2()
             charts.render()
         except:
             print("[+] 用户名输入错误，不存在该用户！")
@@ -267,8 +267,8 @@ def main():
             show.show()
             charts = Charts(obj)
             charts.bar()
-            charts.pie1()
-            # charts.pie2()
+            # charts.pie1()
+            charts.pie2()
             charts.render()
         except:
             print("[+] 单位名称输入错误，不存在该单位！")
