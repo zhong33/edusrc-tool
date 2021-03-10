@@ -1,6 +1,7 @@
 #-*- encoding: utf-8 -*-
 import re
 import os
+import sys
 import time
 import json
 import requests
@@ -130,9 +131,9 @@ class User(object):
         url = self.baseurl + "/profile/%d/" % int(UserInfoDict[self.sid])
         res = requests.get(url)
         self.rank = int(re.findall(re.compile(r'(?<=Rank： )\d*'), res.text)[0])
-        self.bugTotalSubmit = int(re.findall(re.compile(r'(?<=总提交漏洞数量： )\d*'), res.text)[0])
+        self.bugTotal = int(re.findall(re.compile(r'(?<=总提交漏洞数量： )\d*'), res.text)[0])
         self.bugTotalEffective = int(re.findall(re.compile(r'(?<=已审核通过漏洞数量： )\d*'), res.text)[0])
-        self.passingRate = "%.2f%%" % (self.bugTotalEffective / self.bugTotalSubmit*100)
+        self.passingRate = "%.2f%%" % (self.bugTotalEffective / self.bugTotal*100)
         self.averageRank = "%.2f" % (self.rank / self.bugTotalEffective)
         maxPage = int(re.findall(re.compile(r'(?<=page=)\d*(?=\D)'), res.text)[-2]) if re.findall(re.compile(r'(?<=page=)\d*(?=\D)'), res.text) else 1
         pagelist = [_ for _ in range(1,maxPage + 1)]
@@ -210,23 +211,76 @@ class Charts(object):
     
     def render(self):
         self.page.render("result.html")
-        os.system("result.html")
+        # os.system("result.html")
+
+class Show(object):
+    def __init__(self, obj):
+        self.obj = obj
+    
+    def show(self):
+        if self.obj.type == 0:
+            print("[+] 用户：" + self.obj.sid)
+        else:
+            print("[+] 单位：" + self.obj.sid)
+        print("[+] Rank：" + str(self.obj.rank))
+        print("[+] 平均Rank：" + str(self.obj.averageRank))
+        if self.obj.type == 0:
+            print("[+] 通过率：" + str(self.obj.passingRate))
+            print("[+] 有校漏洞数量：" + str(self.obj.bugTotalEffective))
+        print("[+] 总提交漏洞数量：" + str(self.obj.bugTotal))
+        print("[+] 低危漏洞数量：" + str(self.obj.low))
+        print("[+] 中危漏洞数量：" + str(self.obj.middle))
+        print("[+] 高危漏洞数量：" + str(self.obj.high))
+        print("[+] 严重漏洞数量：" + str(self.obj.serious))
 
 def main():
     edusrc = Edusrc()
-    # edusrc.dumpsSchoolInfo()
-    # edusrc.dumpsUserInfo()
-    edusrc.loadUserInfo()
-    edusrc.loadSchoolInfo()
-    user = User("杨众山")
-    obj = user.getUserInfo()
-    # school = School("江西师范大学")
-    # obj = school.getSchoolInfo()
-    charts = Charts(obj)
-    charts.bar()
-    # charts.pie1()
-    charts.pie2()
-    charts.render()
+    if sys.argv[1] == "-new":
+        if sys.argv[2] == "user":
+            edusrc.dumpsUserInfo()
+            print("[+] 用户信息已更新！")
+        elif sys.argv[2] == "school":
+            edusrc.dumpsSchoolInfo()
+            print("[+] 单位信息已更新！")
+        else:
+            print("[+]" + sys.argv[2] + "参数无效！")
+    elif sys.argv[1] == "-u":
+        try:
+            edusrc.loadUserInfo()
+            user = User(sys.argv[2])
+            obj = user.getUserInfo()
+            show = Show(obj)
+            show.show()
+            charts = Charts(obj)
+            charts.bar()
+            charts.pie1()
+            # charts.pie2()
+            charts.render()
+        except:
+            print("[+] 用户名输入错误，不存在该用户！")
+    elif sys.argv[1] == "-s":
+        try:
+            edusrc.loadSchoolInfo()
+            school = School(sys.argv[2])
+            obj = school.getSchoolInfo()
+            show = Show(obj)
+            show.show()
+            charts = Charts(obj)
+            charts.bar()
+            charts.pie1()
+            # charts.pie2()
+            charts.render()
+        except:
+            print("[+] 单位名称输入错误，不存在该单位！")
+    elif sys.argv[1] == "-help":
+        print("[+] 用法：python3 main.py [-new] [-u] [-s] [-help] target")
+        print("[+] 选项：")
+        print("        -new   user/school   更新用户/学校信息")
+        print("        -u     username      查询用户信息")
+        print("        -s     schoolname    查询学校信息")
+        print("        -help                帮助信息")
+    else:
+        print("[+] 参数输入错误，不存在该参数！\n[+] 输入 -help 获取帮助！")
 
 if __name__ == "__main__":
     UserInfoDict = {}
