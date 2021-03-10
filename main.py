@@ -211,7 +211,7 @@ class Charts(object):
     
     def render(self):
         self.page.render("result.html")
-        # os.system("result.html")
+        os.system("result.html")
 
 class Show(object):
     def __init__(self, obj):
