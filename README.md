@@ -12,11 +12,12 @@ python3 main.py -u 杨众山
 ## 二、使用说明
 
 ```
-用法：python3 main.py [-new] [-u] [-s] [-help] target
+用法：python3 main.py [-new] [-u] [-s] [-b] [-help] target
 选项：
     -new   user/school   更新用户/学校信息
     -u     username      查询用户信息
     -s     schoolname    查询学校信息
+    -b     num           查询年榜信息
     -help                帮助信息
 ```
 
@@ -25,3 +26,5 @@ python3 main.py -u 杨众山
 ![](./user.png)
 
 ![](./school.png)
+
+![](./list.png)
