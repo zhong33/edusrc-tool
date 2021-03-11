@@ -5,8 +5,13 @@ import sys
 import time
 import json
 import requests
-from pyecharts import Bar, Pie, Page
+from bs4 import BeautifulSoup
+from collections import Counter
 from threading import Thread, Lock
+from pyecharts.charts import Bar, Pie, Page
+from pyecharts import options as opts
+from pyecharts.components import Table, Image
+from pyecharts.options import ComponentTitleOpts
 
 class GetInfo(Thread):
     def __init__(self, pages, url, otype):
@@ -78,6 +83,26 @@ class GetDetails(Thread):
             finally:
                 self.lock.release()
 
+class GetList(Thread):
+    def __init__(self, pages, url):
+        super().__init__()
+        self.url = url
+        self.pages = pages
+        self.lock = Lock()
+
+    def run(self):
+        for i in self.pages:
+            url = self.url + "&page=%d" % i
+            res = requests.get(url)
+            username = re.findall(re.compile(r'(?<=/" >).*(?=</a>)'), res.text)
+            userrank = re.findall(re.compile(r'(?<=<td class="am-text-center">)\d*(?=</td>\n  </tr>)'), res.text)
+            self.lock.acquire()
+            try:
+                for (uname, urank) in zip(username, userrank):
+                    MonthRank.update({uname: int(urank)})
+            finally:
+                self.lock.release()
+
 class Edusrc(object):
     def __init__(self):
         self.baseurl = "https://src.sjtu.edu.cn"
@@ -130,6 +155,7 @@ class User(object):
     def getUserInfo(self):
         url = self.baseurl + "/profile/%d/" % int(UserInfoDict[self.sid])
         res = requests.get(url)
+        self.imgsrc = "https://src.sjtu.edu.cn/" + re.findall(re.compile(r'(?<=<img src=").*(?=" alt=)'), res.text)[0]
         self.rank = int(re.findall(re.compile(r'(?<=Rank： )\d*'), res.text)[0])
         self.bugTotal = int(re.findall(re.compile(r'(?<=总提交漏洞数量： )\d*'), res.text)[0])
         self.bugTotalEffective = int(re.findall(re.compile(r'(?<=已审核通过漏洞数量： )\d*'), res.text)[0])
@@ -155,7 +181,7 @@ class School(object):
         url = self.baseurl + "/list/firm/%d" % int(SchoolInfoDict[self.sid])
         res = requests.get(url)
         self.rank = int(re.findall(re.compile(r'(?<=漏洞威胁值：)\d*'), res.text)[0])
-        self.bugTotal = int(re.findall(re.compile(r'(?<=漏洞总数：)\d*'), res.text)[0])
+        self.bugTotalEffective = self.bugTotal = int(re.findall(re.compile(r'(?<=漏洞总数：)\d*'), res.text)[0])
         self.averageRank = "%.2f" % (self.rank / self.bugTotal)
         maxPage = int(re.findall(re.compile(r'(?<=page=)\d*(?=\D)'), res.text)[-2]) if re.findall(re.compile(r'(?<=page=)\d*(?=\D)'), res.text) else 1
         pagelist = [_ for _ in range(1,maxPage + 1)]
@@ -169,48 +195,103 @@ class School(object):
 class Charts(object):
     def __init__(self, obj):
         self.obj = obj
-        self.page =  Page()
+        self.page =  Page(page_title=self.obj.sid + "edusrc 信息")
     
     def bar(self):
-        bar = Bar(self.obj.sid + "漏洞情况表")
         bugKind = ["XSS漏洞", "敏感信息泄露", "点击劫持漏洞", "CSRF漏洞", "水平权限绕过", "垂直权限绕过", "弱口令", "SQL注入漏洞", "SSRF漏洞", "文件上传漏洞", "代码执行漏洞", "命令执行漏洞", "其他漏洞"]
         bugNum = [self.obj.xssNum, self.obj.ifodisNum, self.obj.clickNum, self.obj.csrfNum, self.obj.levelNum, self.obj.verticalNum, self.obj.weakpwdNum, self.obj.sqlNum, self.obj.ssrfNum, self.obj.uploadNum, self.obj.codeexeNum, self.obj.cmdexeNum, self.obj.otherNum]
         data = list(zip(bugKind, bugNum))
         data.sort(key = lambda x:(x[1]))
         bugKindFinal = [x[0] for x in data]
         bugNumFinal = [x[1] for x in data]
-        bar.add(
-            "",
-            bugKindFinal,
-            bugNumFinal
+        bar = (
+            Bar()
+            .add_xaxis(bugKindFinal)
+            .add_yaxis("", bugNumFinal)
+            .set_global_opts(
+                title_opts = opts.TitleOpts(title = "各漏洞情况表", pos_left = "center"),
+                xaxis_opts = opts.AxisOpts(name="漏洞类型", axislabel_opts = opts.LabelOpts(rotate = 30, margin = 20)),
+                yaxis_opts = opts.AxisOpts(name="数量"),
+                datazoom_opts = opts.DataZoomOpts(type_ = "inside"),
+            )
         )
         self.page.add(bar)
 
     def pie1(self):
-        pie1 = Pie(self.obj.sid + "漏洞情况表")
-        pie1.add(
-            "",
-            ["XSS漏洞", "敏感信息泄露", "点击劫持漏洞", "CSRF漏洞", "水平权限绕过", "垂直权限绕过", "弱口令", "SQL注入漏洞", "SSRF漏洞", "文件上传漏洞", "代码执行漏洞", "命令执行漏洞", "其他漏洞",],
-            [self.obj.xssNum, self.obj.ifodisNum, self.obj.clickNum, self.obj.csrfNum, self.obj.levelNum, self.obj.verticalNum, self.obj.weakpwdNum, self.obj.sqlNum, self.obj.ssrfNum, self.obj.uploadNum, self.obj.codeexeNum, self.obj.cmdexeNum, self.obj.otherNum],
-            is_label_show = True
+        xData = ['已通过', '未通过']
+        yData = [self.obj.bugTotalEffective, self.obj.bugTotal - self.obj.bugTotalEffective]
+        pie1 = (
+            Pie()
+            .add(
+                "", [list(z) for z in zip(xData, yData)],
+                radius = ["50%", "70%"],
+                label_opts = opts.LabelOpts(is_show = False, position = "center")
+            )
+            .set_colors(["#2ecc71", "#d53a35"])
+            .set_global_opts(
+                title_opts = opts.TitleOpts(title = "有效漏洞情况图", pos_left = "center"),
+                legend_opts = opts.LegendOpts(type_ = "scroll", pos_left = "5%", pos_top = "35%", orient = "vertical")   
+            )
         )
         self.page.add(pie1)
     
     def pie2(self):
-        pie2 = Pie(self.obj.sid + "漏洞情况表", title_pos="center")
-        pie2.add(
-            "",
-            ["低危", "中危", "高危", "严重"],
-            [self.obj.low, self.obj.middle, self.obj.high, self.obj.serious],
-            label_text_color = None,
-            is_label_show = True, 
-            legend_orient = "vertical",
-            legend_pos = "left"
+        bugLevel = ["低危", "中危", "高危", "严重"]
+        bugNum = [self.obj.low, self.obj.middle, self.obj.high, self.obj.serious]
+        pie2 = (
+            Pie()
+            .add("", [list(z) for z in zip(bugLevel, bugNum)])
+            .set_colors(["#d48265", "#6ab0b8", "#2f4554", "#c23531"])
+            .set_global_opts(
+                title_opts = opts.TitleOpts(title = "各级别漏洞情况图", pos_left = "center"),
+                legend_opts = opts.LegendOpts(type_ = "scroll", pos_right = "5%", pos_top = "35%", orient = "vertical")   
+            )
         )
         self.page.add(pie2)
     
+    def table(self):
+        table = Table()
+        if self.obj.type == 0:
+            headers = ["用户名", "Rank", "平均Rank", "通过率"]
+            rows = [[self.obj.sid, self.obj.rank, self.obj.averageRank, self.obj.passingRate]]
+            title = self.obj.sid + "个人信息"
+        else:
+            headers = ["单位", "Rank", "平均Rank"]
+            rows = [[self.obj.sid, self.obj.rank, self.obj.averageRank]]
+            title = self.obj.sid + "信息"
+        table.add(headers, rows)
+        table.set_global_opts(title_opts = ComponentTitleOpts(title = title, title_style = {"style": "text-align:center;font-weight:800;"}))
+        self.page.add(table)
+
+    def image(self):
+        image = Image()
+        image.add(
+            src = (self.obj.imgsrc),
+            style_opts={"width": "100px", "height": "100px", "style": "margin-top: 20px;border-radius:50%;"}
+        )
+        self.page.add(image)
+
     def render(self):
         self.page.render("result.html")
+        with open("result.html", "r+", encoding='utf-8') as html:
+            html_bf = BeautifulSoup(html, 'lxml')
+            divs = html_bf.select('.chart-container')
+            if self.obj.type == 0:
+                divs[0]["style"] = "width:100px;height:142px;padding-left:250px;margin-top:200px;margin-bottom:-190px;"
+                divs[1]["style"] = "width:315px;height:161px;padding-left:350px;"
+                divs[2]["style"] = "width:464px;height:322px;top:10px;left:29px;"
+                divs[3]["style"] = "width:571px;height:321px;top:-340px;left:335px;"
+                divs[4]["style"] = "width:958px;height:545px;top:-900px;left:885px;"
+            else:
+                divs[0]["style"] = "width:315px;height:161px;padding-left:350px;margin-top:200px;"
+                divs[1]["style"] = "width:464px;height:322px;top:10px;left:29px;"
+                divs[2]["style"] = "width:571px;height:321px;top:-340px;left:335px;"
+                divs[3]["style"] = "width:958px;height:545px;top:-900px;left:885px;"
+            html_new = str(html_bf)
+            html.seek(0, 0)
+            html.truncate()
+            html.write(html_new)
+            html.close()
         os.system("result.html")
 
 class Show(object):
@@ -226,12 +307,52 @@ class Show(object):
         print("[+] 平均Rank：" + str(self.obj.averageRank))
         if self.obj.type == 0:
             print("[+] 通过率：" + str(self.obj.passingRate))
-            print("[+] 有校漏洞数量：" + str(self.obj.bugTotalEffective))
+            print("[+] 有效漏洞数量：" + str(self.obj.bugTotalEffective))
         print("[+] 总提交漏洞数量：" + str(self.obj.bugTotal))
         print("[+] 低危漏洞数量：" + str(self.obj.low))
         print("[+] 中危漏洞数量：" + str(self.obj.middle))
         print("[+] 高危漏洞数量：" + str(self.obj.high))
         print("[+] 严重漏洞数量：" + str(self.obj.serious))
+
+class Annuallist(object):
+    def __init__(self):
+        self.baseurl = "https://src.sjtu.edu.cn/user/month/?year=%d" % time.localtime().tm_year
+        self.month = time.localtime().tm_mon
+    
+    def getDeatils(self, num):
+        if num <= 0:
+            exit("[+] 所取条数必须大于0，默认为20！")
+        YearRank = {}
+        for i in range(1, self.month + 1):
+            global MonthRank
+            MonthRank = {}
+            url = self.baseurl + "&month=%d" % i
+            res = requests.get(url)
+            maxPage = int(re.findall(re.compile(r'(?<=page=)\d*(?=\D)'), res.text)[-2]) if re.findall(re.compile(r'(?<=page=)\d*(?=\D)'), res.text) else 1
+            pagelist = [_ for _ in range(1,maxPage + 1)]
+            threads = [GetList(pagelist[i:i+3], url) for i in range(0,maxPage + 1,3)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            YearRank = dict(Counter(YearRank) + Counter(MonthRank))
+        YearRank = sorted(YearRank.items(), key = lambda x:x[1], reverse=True)
+        if num > len(YearRank):
+            num = len(YearRank)
+            YearRank = dict(YearRank)
+        else:
+            YearRank = dict(YearRank[0:num])
+        table = Table(page_title = "edusrc%d 年度榜单 TOP %d" % (time.localtime().tm_year,num))
+        YearRankKeys= [_ for _ in YearRank.keys()]
+        YearRankValues = [_ for _ in YearRank.values()]
+        headers = ["排名", "用户名", "Rank"]
+        rows = []
+        for i in range(len(YearRank)):
+            row = [i + 1, YearRankKeys[i], YearRankValues[i]]
+            rows.append(row)
+        table.add(headers, rows)
+        table.render("result.html")
+        os.system("result.html")
 
 def main():
     edusrc = Edusrc()
@@ -252,9 +373,11 @@ def main():
             show = Show(obj)
             show.show()
             charts = Charts(obj)
-            charts.bar()
-            # charts.pie1()
+            charts.image()
+            charts.table()
+            charts.pie1()
             charts.pie2()
+            charts.bar()
             charts.render()
         except:
             print("[+] 用户名输入错误，不存在该用户！")
@@ -266,18 +389,28 @@ def main():
             show = Show(obj)
             show.show()
             charts = Charts(obj)
-            charts.bar()
-            # charts.pie1()
+            charts.table()
+            charts.pie1()
             charts.pie2()
+            charts.bar()
             charts.render()
         except:
             print("[+] 单位名称输入错误，不存在该单位！")
+    elif sys.argv[1] == "-b":
+        annuallist = Annuallist()
+        try:
+            num = int(sys.argv[2])
+        except:
+            num = 20
+        annuallist.getDeatils(num)
+
     elif sys.argv[1] == "-help":
-        print("[+] 用法：python3 main.py [-new] [-u] [-s] [-help] target")
+        print("[+] 用法：python3 main.py [-new] [-u] [-s] [-b] [-help] target")
         print("[+] 选项：")
         print("        -new   user/school   更新用户/学校信息")
         print("        -u     username      查询用户信息")
         print("        -s     schoolname    查询学校信息")
+        print("        -b     num           查询年榜信息")
         print("        -help                帮助信息")
     else:
         print("[+] 参数输入错误，不存在该参数！\n[+] 输入 -help 获取帮助！")
